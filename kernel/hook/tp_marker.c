@@ -7,6 +7,8 @@
 #include <linux/sched/task.h>
 
 #include "policy/allowlist.h"
+#include "ksu_samsung_kdp.h"
+#include "klog.h" // IWYU pragma: keep
 #include "selinux/selinux.h"
 
 // Tracepoint registration count management
@@ -96,7 +98,7 @@ void ksu_mark_running_process_locked(void)
         } else {
             ksu_clear_task_tracepoint_flag(t);
         }
-        put_cred(cred);
+		ksu_put_cred(cred);
     }
     read_unlock(&tasklist_lock);
 }
