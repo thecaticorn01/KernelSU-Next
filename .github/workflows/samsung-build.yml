@@ -12,6 +12,11 @@ name: Build Samsung Manager
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - ccr-80fb2d52-0lhlmi
+    paths:
+      - '.github/workflows/samsung-build.yml'
 
 jobs:
   build-lkm:
