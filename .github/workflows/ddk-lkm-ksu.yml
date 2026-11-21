@@ -63,7 +63,10 @@ jobs:
           EXTRA_ARGS="$EXTRA_ARGS KSU_NEXT_MANAGER_HASH=$EXPECTED_MANAGER_HASH"
         fi
 
-        CONFIG_KSU=m CC=clang make $EXTRA_ARGS
+        # Samsung KDP/RKP/DEFEX compatibility (see kernel/Kconfig)
+        SAMSUNG_ARGS="CONFIG_KSU_SAMSUNG_KDP=y CONFIG_KSU_SAMSUNG_RKP=y CONFIG_KSU_SAMSUNG_DEFEX=y CONFIG_KSU_SAMSUNG_NO_PATCH_TEXT=y"
+
+        CONFIG_KSU=m CC=clang make $SAMSUNG_ARGS $EXTRA_ARGS
         
         echo "=== Build completed ==="
 
