@@ -55,7 +55,16 @@ static inc_rlimit_ucounts_t inc_rlimit_ucounts_fn;
 static dec_rlimit_ucounts_t dec_rlimit_ucounts_fn;
 #endif
 
-static void samsung_kdp_commit_worker(struct work_struct *work)
+/*
+ * __nocfi: this worker calls Samsung KDP helpers (prepare_ro_creds,
+ * kdp_assign_pgd, kdp_usecount_*, inc/dec_rlimit_ucounts) resolved from
+ * kallsyms through typed function pointers. On CFI_CLANG kernels (Android
+ * 16 / 6.12 GKI) an indirect call checks the target's type hash; the
+ * resolved kernel functions do not carry our call-site hash, so without
+ * __nocfi the check fails and the kernel panics (hard reboot) the moment
+ * root is granted.
+ */
+static void __nocfi samsung_kdp_commit_worker(struct work_struct *work)
 {
 	struct samsung_kdp_commit_work *commit_work =
 		container_of(work, struct samsung_kdp_commit_work, work);
@@ -117,7 +126,7 @@ out:
 }
 #endif
 
-void ksu_samsung_kdp_put_cred(const struct cred *cred)
+void __nocfi ksu_samsung_kdp_put_cred(const struct cred *cred)
 {
 #ifdef CONFIG_KSU_SAMSUNG_KDP
 	struct cred *mutable_cred = (struct cred *)cred;

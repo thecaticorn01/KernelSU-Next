@@ -17,6 +17,8 @@ on:
       - ccr-80fb2d52-0lhlmi
     paths:
       - '.github/workflows/samsung-build.yml'
+      - 'kernel/**'
+      - 'userspace/ksud/**'
 
 jobs:
   build-lkm:

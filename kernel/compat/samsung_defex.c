@@ -77,7 +77,7 @@ void ksu_samsung_defex_exit(void)
 #endif
 }
 
-void ksu_samsung_defex_sync_current(void)
+void __nocfi ksu_samsung_defex_sync_current(void)
 {
 #ifdef CONFIG_KSU_SAMSUNG_DEFEX
 	const struct cred *cred = current_cred();
