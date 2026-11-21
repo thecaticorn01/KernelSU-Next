@@ -22,6 +22,10 @@
 #if defined(__riscv)
 #include "hook/riscv64/syscall_regs.h"
 #endif
+#include "compat/samsung_rkp.h"
+
+static bool syscall_hook_manager_initialized;
+static bool samsung_rkp_initialized;
 
 #ifdef CONFIG_KRETPROBES
 
@@ -107,19 +111,21 @@ static void ksu_sys_enter_handler(void *data, struct pt_regs *regs, long id)
         return;
 
     if (ksu_has_syscall_hook(id)) {
-        struct pt_regs *current_regs = task_pt_regs(current);
-
+        // Use the tracepoint's own regs, not task_pt_regs(current). On some
+        // Samsung kernels (e.g. Exynos A065) task_pt_regs(current) does not
+        // alias the live syscall frame inside this tracepoint, so writing
+        // through it corrupts state and crashes.
 #if defined(__x86_64__)
         // Stash the original syscall number in ax.
         // We use ax because it currently just holds -ENOSYS and is safe to overwrite.
-        current_regs->ax = id;
-        current_regs->orig_ax = ksu_dispatcher_nr;
+        regs->ax = id;
+        regs->orig_ax = ksu_dispatcher_nr;
 #elif defined(__aarch64__)
-        PT_REGS_ORIG_SYSCALL(current_regs) = id;
-        current_regs->syscallno = ksu_dispatcher_nr;
+        PT_REGS_ORIG_SYSCALL(regs) = id;
+        regs->syscallno = ksu_dispatcher_nr;
 #elif defined(__riscv)
         /* orig_a0 retains argument zero; a0 is the -ENOSYS return slot. */
-        ksu_riscv_redirect_syscall(current_regs, id, ksu_dispatcher_nr);
+        ksu_riscv_redirect_syscall(regs, id, ksu_dispatcher_nr);
 #endif
     }
 }
@@ -129,6 +135,22 @@ void __init ksu_syscall_hook_manager_init(void)
 {
     int ret;
     pr_info("hook_manager: ksu_hook_manager_init called\n");
+
+    if (ksu_dispatcher_nr < 0) {
+        ret = ksu_samsung_rkp_init();
+        if (ret) {
+            pr_err("hook_manager: Samsung RKP fallback unavailable: %d\n",
+                   ret);
+            return;
+        }
+        samsung_rkp_initialized = true;
+        ksu_setuid_hook_init();
+        ksu_sucompat_init();
+        ksu_avc_spoof_init();
+        return;
+    }
+
+    syscall_hook_manager_initialized = true;
 
 #ifdef CONFIG_KRETPROBES
     syscall_regfunc_rp = init_kretprobe("syscall_regfunc", syscall_regfunc_handler);
@@ -162,6 +184,17 @@ void __init ksu_syscall_hook_manager_init(void)
 void __exit ksu_syscall_hook_manager_exit(void)
 {
     pr_info("hook_manager: ksu_hook_manager_exit called\n");
+    if (!syscall_hook_manager_initialized) {
+        if (samsung_rkp_initialized) {
+            ksu_samsung_rkp_exit();
+            ksu_sucompat_exit();
+            ksu_setuid_hook_exit();
+            ksu_avc_spoof_exit();
+            samsung_rkp_initialized = false;
+        }
+        ksu_syscall_hook_exit();
+        return;
+    }
 #ifdef CONFIG_HAVE_SYSCALL_TRACEPOINTS
     unregister_trace_sys_enter(ksu_sys_enter_handler, NULL);
     tracepoint_synchronize_unregister();

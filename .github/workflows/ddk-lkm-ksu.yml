@@ -27,6 +27,11 @@ on:
         required: false
         default: ''
         type: string
+      samsung:
+        description: 'enable Samsung KDP/RKP/DEFEX late-load compat (aarch64 only)'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   build-kernelsu-ko:
@@ -45,6 +50,7 @@ jobs:
         MANAGER_PACKAGE: ${{ inputs.manager_package }}
         EXPECTED_MANAGER_SIZE: ${{ inputs.expected_manager_size }}
         EXPECTED_MANAGER_HASH: ${{ inputs.expected_manager_hash }}
+        SAMSUNG: ${{ inputs.samsung }}
       run: |
         git config --global --add safe.directory /__w/KernelSU-Next/KernelSU-Next
 
@@ -61,6 +67,11 @@ jobs:
         fi
         if [ -n "$EXPECTED_MANAGER_HASH" ]; then
           EXTRA_ARGS="$EXTRA_ARGS KSU_NEXT_MANAGER_HASH=$EXPECTED_MANAGER_HASH"
+        fi
+        # Samsung KDP/RKP/DEFEX late-load compatibility (aarch64 only).
+        if [ "$SAMSUNG" = "true" ]; then
+          EXTRA_ARGS="$EXTRA_ARGS CONFIG_KSU_SAMSUNG_KDP=y CONFIG_KSU_SAMSUNG_RKP=y CONFIG_KSU_SAMSUNG_DEFEX=y CONFIG_KSU_SAMSUNG_NO_PATCH_TEXT=y"
+          echo "Samsung compat enabled: $EXTRA_ARGS"
         fi
 
         CONFIG_KSU=m CC=clang make $EXTRA_ARGS

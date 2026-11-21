@@ -1,0 +1,145 @@
+name: Build Samsung Manager
+
+# Builds a KernelSU-Next manager APK whose embedded aarch64 LKM carries the
+# Samsung KDP/RKP/DEFEX late-load compatibility (CONFIG_KSU_SAMSUNG_*), and
+# signs the APK v2-only with the committed keystore whose certificate hash is
+# baked into kernel/Kbuild (KSU_NEXT_MANAGER_SIZE / KSU_NEXT_MANAGER_HASH).
+#
+# The kernel only accepts a manager signed with APK Signature Scheme v2 and
+# rejects any other signing-block id, so the final apksigner step enables v1+v2
+# and disables v3/v4 (v1 lives in META-INF, outside the signing block, so the
+# kernel's v2 check is unaffected by it).
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-lkm:
+    uses: ./.github/workflows/build-lkm.yml
+    secrets: inherit
+    with:
+      samsung: true
+
+  build-ksuinit:
+    uses: ./.github/workflows/ksuinit.yml
+
+  build-ksud:
+    needs: [build-lkm, build-ksuinit]
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-linux-android
+            os: ubuntu-latest
+          - target: x86_64-linux-android
+            os: ubuntu-latest
+          - target: riscv64-linux-android
+            os: ubuntu-latest
+    uses: ./.github/workflows/ksud.yml
+    with:
+      target: ${{ matrix.target }}
+      os: ${{ matrix.os }}
+
+  build-manager:
+    needs: build-ksud
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./manager
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Write signing config (committed Samsung keystore)
+        run: |
+          cp keystore/ksunext-samsung.jks key.jks
+          {
+            echo KEYSTORE_FILE=key.jks
+            echo KEYSTORE_PASSWORD=ksunext-samsung
+            echo KEY_ALIAS=ksunext
+            echo KEY_PASSWORD=ksunext-samsung
+          } >> gradle.properties
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Download arm64 ksud
+        uses: actions/download-artifact@v7
+        with:
+          name: ksud-aarch64-linux-android
+          path: .
+
+      - name: Download x86_64 ksud
+        uses: actions/download-artifact@v7
+        with:
+          name: ksud-x86_64-linux-android
+          path: .
+
+      - name: Download riscv64 ksud
+        uses: actions/download-artifact@v7
+        with:
+          name: ksud-riscv64-linux-android
+          path: .
+
+      - name: Copy ksud to app jniLibs
+        run: |
+          mkdir -p app/src/main/jniLibs/arm64-v8a
+          mkdir -p app/src/main/jniLibs/x86_64
+          mkdir -p app/src/main/jniLibs/riscv64
+          cp -f ../aarch64-linux-android/release/ksud ../manager/app/src/main/jniLibs/arm64-v8a/libksud.so
+          cp -f ../x86_64-linux-android/release/ksud ../manager/app/src/main/jniLibs/x86_64/libksud.so
+          cp -f ../riscv64-linux-android/release/ksud ../manager/app/src/main/jniLibs/riscv64/libksud.so
+
+      - name: Build with Gradle
+        run: ./gradlew clean assembleRelease
+
+      - name: Re-sign APK v2-only (kernel manager requirement)
+        run: |
+          set -e
+          APK=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
+          echo "APK: $APK"
+          BT=$(ls -d "$ANDROID_SDK_ROOT"/build-tools/*/ | sort -V | tail -1)
+          echo "build-tools: $BT"
+          "${BT}apksigner" sign \
+            --ks keystore/ksunext-samsung.jks \
+            --ks-pass pass:ksunext-samsung \
+            --key-pass pass:ksunext-samsung \
+            --ks-key-alias ksunext \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled false \
+            --v4-signing-enabled false \
+            "$APK"
+          echo "=== verify (must show v2, not v3) ==="
+          "${BT}apksigner" verify --verbose --print-certs "$APK"
+          echo "=== certificate SHA-256 of DER (must match kernel KSU_NEXT_MANAGER_HASH) ==="
+          unzip -p "$APK" META-INF/*.RSA >/dev/null 2>&1 || true
+          cp keystore/cert.der /tmp/cert.der 2>/dev/null || keytool -exportcert -keystore keystore/ksunext-samsung.jks -alias ksunext -storepass ksunext-samsung -file /tmp/cert.der
+          echo "cert size: $(wc -c < /tmp/cert.der) bytes"
+          echo "cert sha256: $(sha256sum /tmp/cert.der | awk '{print $1}')"
+
+      - name: Rename APK
+        run: |
+          APK=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
+          VER=$(git rev-list --count HEAD)
+          cp "$APK" "app/build/outputs/apk/release/KernelSU-Next-Samsung_${VER}-release.apk"
+
+      - name: Upload signed Samsung manager APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: manager-samsung
+          path: manager/app/build/outputs/apk/release/KernelSU-Next-Samsung_*-release.apk
+
+      - name: Upload mappings
+        uses: actions/upload-artifact@v7
+        with:
+          name: mappings-samsung
+          path: "manager/app/build/outputs/mapping/release/"

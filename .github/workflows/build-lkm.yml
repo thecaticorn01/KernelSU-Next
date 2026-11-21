@@ -17,7 +17,18 @@ on:
         required: false
         default: ''
         type: string
+      samsung:
+        description: 'enable Samsung KDP/RKP/DEFEX late-load compat (aarch64 ksu LKM)'
+        required: false
+        default: false
+        type: boolean
   workflow_dispatch:
+    inputs:
+      samsung:
+        description: 'enable Samsung KDP/RKP/DEFEX late-load compat (aarch64 ksu LKM)'
+        required: false
+        default: false
+        type: boolean
 jobs:
   build-lkm-ksu:
     strategy:
@@ -37,6 +48,7 @@ jobs:
       manager_package: ${{ inputs.manager_package || '' }}
       expected_manager_size: ${{ inputs.expected_manager_size || '' }}
       expected_manager_hash: ${{ inputs.expected_manager_hash || '' }}
+      samsung: ${{ inputs.samsung || false }}
   
   build-lkm-susfs:
     strategy:
