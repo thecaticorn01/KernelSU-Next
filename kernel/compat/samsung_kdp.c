@@ -3,6 +3,7 @@
 #include <linux/errno.h>
 #include <linux/rcupdate.h>
 #include <linux/sched.h>
+#include <linux/sched/signal.h>
 #include <linux/sched/task.h>
 #include <linux/sched/user.h>
 #include <linux/user_namespace.h>
@@ -21,12 +22,20 @@ enum samsung_kdp_cred_command {
 typedef struct cred *(*prepare_ro_creds_t)(struct cred *cred, int command,
 					   u64 task);
 typedef void (*kdp_assign_pgd_t)(struct task_struct *task);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0)
+typedef unsigned int (*kdp_usecount_dec_and_test_t)(int nr, struct cred *cred);
+#define KSU_KDP_USECOUNT_SYMBOL "kdp_usecount_sub_and_test"
+#define ksu_kdp_usecount_dec(fn, cred) (fn)(1, (cred))
+#else
 typedef unsigned int (*kdp_usecount_dec_and_test_t)(struct cred *cred);
+#define KSU_KDP_USECOUNT_SYMBOL "kdp_usecount_dec_and_test"
+#define ksu_kdp_usecount_dec(fn, cred) (fn)(cred)
+#endif
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
 typedef long (*inc_rlimit_ucounts_t)(struct ucounts *ucounts,
-				     enum rlimit_type type, long value);
+				     unsigned int type, long value);
 typedef bool (*dec_rlimit_ucounts_t)(struct ucounts *ucounts,
-				     enum rlimit_type type, long value);
+				     unsigned int type, long value);
 #endif
 
 struct samsung_kdp_commit_work {
@@ -113,7 +122,7 @@ void ksu_samsung_kdp_put_cred(const struct cred *cred)
 #ifdef CONFIG_KSU_SAMSUNG_KDP
 	struct cred *mutable_cred = (struct cred *)cred;
 
-	if (mutable_cred && kdp_usecount_dec_and_test_fn(mutable_cred))
+	if (mutable_cred && ksu_kdp_usecount_dec(kdp_usecount_dec_and_test_fn, mutable_cred))
 		__put_cred(mutable_cred);
 #else
 	put_cred(cred);
@@ -131,7 +140,7 @@ int ksu_samsung_kdp_init(void)
 			"kdp_assign_pgd");
 	kdp_usecount_dec_and_test_fn = (kdp_usecount_dec_and_test_t)
 		ksu_resolve_symbol_for_functable_hook(
-			"kdp_usecount_dec_and_test");
+			KSU_KDP_USECOUNT_SYMBOL);
 	if (!prepare_ro_creds_fn || !kdp_assign_pgd_fn ||
 	    !kdp_usecount_dec_and_test_fn) {
 		pr_err("Samsung KDP credential functions unavailable\n");

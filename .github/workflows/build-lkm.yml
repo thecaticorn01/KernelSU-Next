@@ -32,6 +32,7 @@ on:
 jobs:
   build-lkm-ksu:
     strategy:
+      fail-fast: false
       matrix:
         kmi:
           - android12-5.10
@@ -52,6 +53,7 @@ jobs:
   
   build-lkm-susfs:
     strategy:
+      fail-fast: false
       matrix:
         kmi:
           - android12-5.10

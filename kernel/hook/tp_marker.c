@@ -8,6 +8,7 @@
 
 #include "policy/allowlist.h"
 #include "ksu_samsung_kdp.h"
+#include "klog.h" // IWYU pragma: keep
 #include "selinux/selinux.h"
 
 // Tracepoint registration count management
