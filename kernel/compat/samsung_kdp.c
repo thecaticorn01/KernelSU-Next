@@ -3,6 +3,7 @@
 #include <linux/errno.h>
 #include <linux/rcupdate.h>
 #include <linux/sched.h>
+#include <linux/sched/signal.h>
 #include <linux/sched/task.h>
 #include <linux/sched/user.h>
 #include <linux/user_namespace.h>
