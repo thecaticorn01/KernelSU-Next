@@ -5,8 +5,42 @@ on:
   workflow_dispatch:
 
 jobs:
+  signing:
+    # The kernel module only trusts a manager APK whose v2 signing certificate
+    # matches the expected size/hash it was built with. Derive both from the
+    # keystore that will sign this build so the two always agree.
+    runs-on: ubuntu-latest
+    outputs:
+      size: ${{ steps.cert.outputs.size }}
+      hash: ${{ steps.cert.outputs.hash }}
+    steps:
+      - name: Derive signing certificate size and hash
+        id: cert
+        env:
+          KEYSTORE: ${{ secrets.KEYSTORE }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          if [ -z "$KEYSTORE" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ]; then
+            echo "::error::Repository secrets KEYSTORE, KEYSTORE_PASSWORD, KEY_ALIAS and KEY_PASSWORD are required so the kernel module and manager share one signing key."
+            exit 1
+          fi
+          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/key.jks"
+          keytool -exportcert -keystore "$RUNNER_TEMP/key.jks" -storepass "$KEYSTORE_PASSWORD" \
+            -alias "$KEY_ALIAS" -file "$RUNNER_TEMP/cert.der"
+          size=$(stat -c %s "$RUNNER_TEMP/cert.der")
+          hash=$(sha256sum "$RUNNER_TEMP/cert.der" | cut -d' ' -f1)
+          rm -f "$RUNNER_TEMP/key.jks" "$RUNNER_TEMP/cert.der"
+          echo "size=$(printf '0x%x' "$size")" >> "$GITHUB_OUTPUT"
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+          echo "Signing cert size: $size, sha256: $hash"
+
   build-lkm:
+    needs: signing
     uses: ./.github/workflows/build-lkm.yml
+    with:
+      expected_manager_size: ${{ needs.signing.outputs.size }}
+      expected_manager_hash: ${{ needs.signing.outputs.hash }}
     secrets: inherit
 
   build-ksuinit:
