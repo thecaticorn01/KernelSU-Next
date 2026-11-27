@@ -244,6 +244,13 @@ unsigned long __nocfi ksu_kallsyms_lookup_name(const char *name)
 	return kallsyms_lookup_name_fn(name);
 }
 
+/* Upstream callers (selinux_hide, priority_uid) resolve kernelsu-module symbols
+ * through this name; with the kprobe-bootstrap resolver it is the same lookup. */
+unsigned long find_kernel_symbol_exact_any(const char *symbol_name)
+{
+	return ksu_kallsyms_lookup_name(symbol_name);
+}
+
 /* Collect EVERY vmlinux symbol with this exact name, not just the first one.
  *
  * find_kernel_symbol_exact() returns one address, which is all most callers need; but a name is

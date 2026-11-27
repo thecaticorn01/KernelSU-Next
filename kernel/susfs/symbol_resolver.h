@@ -4,6 +4,9 @@
 
 void *ksu_resolve_symbol_for_functable_hook(const char *symbol_name);
 unsigned long find_kernel_symbol_exact(const char *symbol_name);
+/* Exact name -> address INCLUDING module-owned symbols (e.g. a kernelsu.ko
+ * variable). Same lookup as ksu_kallsyms_lookup_name(); kept for upstream callers. */
+unsigned long find_kernel_symbol_exact_any(const char *symbol_name);
 /* EVERY vmlinux symbol with this exact name (not just the first): a kprobe registered with
  * .symbol_name attaches to whichever match kallsyms lists first, and not every name is unique
  * (measured: `seq_show` exists four times from 6.1 on, once on 5.10/5.15).  Writes at most
